@@ -14,3 +14,6 @@ going through [computer graphics from scratch](https://gabrielgambetta.com/compu
 
 ### with light and reflections
 ![image](output/shiny.png)
+
+### with shadows
+![image](output/shadows.png)
