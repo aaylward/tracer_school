@@ -1,10 +1,8 @@
 from enum import Enum
-import math
+from math import sqrt, pow
 from PIL import Image
-from numpy import multiply
 
 POS_INF = float('inf')
-NEG_INF = float('-inf')
 
 Color = tuple[int, int, int]
 Vec2 = tuple[int, int]
@@ -18,19 +16,20 @@ YELLOW = (255, 255, 0)
 WHITE = (255, 255, 255)
 BACKGROUND_COLOR = WHITE
 
-EPSILON = 0.001
+EPSILON = 0.0001
 
 
 def create_image(width: int, height: int, mode='RGB') -> Image:
     return Image.new(mode, (width, height))
 
 
-def put_pixel(img: Image, point: Vec2, color: Color) -> None:
+def put_pixel(img: Image, pixels, point: Vec2, color: Color) -> None:
     (c_w, c_h) = img.size
     (x, y) = point
-    translated_point = (int(c_w / 2 + x), int(c_h / 2 - y) - 1)
-    if 0 <= translated_point[0] < img.width and 0 <= translated_point[1] < img.height:
-        img.putpixel(translated_point, color)
+    p_x = int(c_w / 2 + x)
+    p_y = int(c_h / 2 - y) - 1
+    if 0 <= p_x < img.width and 0 <= p_y < img.height:
+        pixels[p_x, p_y] = color
 
 
 ###### algebra ######
@@ -39,7 +38,7 @@ def dot(v1, v2):
 
 
 def length(v):
-    return math.sqrt(dot(v, v))
+    return sqrt(dot(v, v))
 
 
 def scalar_multiply(v, s):
@@ -55,7 +54,7 @@ def subtract(v1, v2):
 
 
 def clamp(v):
-    return tuple(map(lambda x: int(min(255, max(0, x))), v))
+    return (int(min(255, max(0, v[0]))), int(min(255, max(0, v[1]))), int(min(255, max(0, v[2]))))
 
 
 #########################
@@ -84,10 +83,9 @@ class Light:
 
 
 class Scene:
-    def __init__(self, viewport_size: int, projection_plane: int, camera_position: Vec3, background_color: Color, spheres: list[Sphere], lights: list[Light]):
+    def __init__(self, viewport_size: int, projection_plane: int, background_color: Color, spheres: list[Sphere], lights: list[Light]):
         self.viewport_size = viewport_size
         self.projection_plane = projection_plane
-        self.camera_position = camera_position
         self.background_color = background_color
         self.spheres = spheres
         self.lights = lights
@@ -109,59 +107,62 @@ def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple
     if discriminant < 0:
         return (POS_INF, POS_INF)
 
-    sqrt_disc = math.sqrt(discriminant)
+    sqrt_disc = sqrt(discriminant)
 
     t_1 = (-b + sqrt_disc) / 2*a
     t_2 = (-b - sqrt_disc) / 2*a
     return (t_1, t_2)
 
 
-def compute_lighting(point: Vec3, normal: Vec3, scene: Scene, view: Vec3, specular: int) -> float:
+def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere], lights: list[Light], specular: int) -> float:
     intensity = 0
     length_n = length(normal)
+    length_v = length(view)
 
-    for light in scene.lights:
+    for light in lights:
         if light.light_type == LightType.AMBIENT:
             intensity += light.intensity
+            continue
+
+        if light.light_type == LightType.POINT:
+            l_vec = subtract(light.position, point)
+            t_max = 1.0
         else:
-            if light.light_type == LightType.POINT:
-                l_vec = subtract(light.position, point)
-                t_max = 1.0
-            else:
-                l_vec = light.position
-                t_max = POS_INF
+            l_vec = light.position
+            t_max = POS_INF
 
-            # shadow check
-            # (shadow_sphere, shadow_t) = closest_intersection(point, l_vec, EPSILON, t_max, scene)
-            # if shadow_sphere:
-            #    continue
+        # shadow check
+        # (shadow_sphere, shadow_t) = closest_intersection(point, l_vec, EPSILON, t_max, spheres)
+        # if shadow_sphere is not None:
+        #     continue
+        #     # pass
 
-            # diffuse lighting
-            n_dot_l = dot(normal, l_vec)
-            if n_dot_l > 0:
-                intensity += light.intensity * n_dot_l / (length(normal) * length(l_vec))
+        # diffuse lighting
+        n_dot_l = dot(normal, l_vec)
+        if n_dot_l > 0:
+            intensity += (light.intensity * n_dot_l / (length_n * length(l_vec)))
 
-            # specular lighting
-            if specular is not None:
-                reflection = subtract(scalar_multiply(normal, 2 * dot(normal, l_vec)), l_vec)
-                r_dot_v = dot(reflection, view)
-                if r_dot_v > 0:
-                    intensity += light.intensity * math.pow(r_dot_v / (length(reflection) * length(view)), specular)
+        # specular lighting
+        if specular is not None:
+            reflection = subtract(scalar_multiply(normal, 2 * dot(normal, l_vec)), l_vec)
+            r_dot_v = dot(reflection, view)
+            if r_dot_v > 0:
+                intensity += (light.intensity * pow(r_dot_v / (length(reflection) * length_v), specular))
 
     return intensity
 
 
-def closest_intersection(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: Scene):
+def closest_intersection(origin: Vec3, direction: Vec3, t_min: float, t_max: float, spheres: list[Sphere]):
     closest_t = POS_INF
     closest_sphere = None
 
-    for sphere in scene.spheres:
+    for sphere in spheres:
         (t_1, t_2) = intersect_ray_sphere(origin, direction, sphere)
-        if t_1 < closest_t and t_min < t_1 and t_1 < t_max:
+        if t_1 < closest_t and t_min < t_1 < t_max:
             closest_t = t_1
             closest_sphere = sphere
 
-        if t_2 < closest_t and t_min < t_2 and t_2 < t_max:
+        if t_2 < closest_t and t_min < t_2 < t_max:
             closest_t = t_2
             closest_sphere = sphere
 
@@ -169,7 +170,7 @@ def closest_intersection(origin: Vec3, direction: Vec3, t_min: float, t_max: flo
 
 
 def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: Scene) -> Color:
-    (closest_sphere, closest_t) = closest_intersection(origin, direction, t_min, t_max, scene)
+    (closest_sphere, closest_t) = closest_intersection(origin, direction, t_min, t_max, scene.spheres)
 
     if closest_sphere is None:
         return BACKGROUND_COLOR
@@ -179,22 +180,23 @@ def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: 
     normal = scalar_multiply(normal, 1.0 / length(normal));
 
     view: Vec3 = scalar_multiply(direction, -1)
-    lighting: float = compute_lighting(point, normal, scene, view, closest_sphere.specular)
+    lighting: float = compute_lighting(point, normal, view, scene.spheres, scene.lights, closest_sphere.specular)
     return scalar_multiply(closest_sphere.color, lighting)
 
 
-def draw_scene(scene: Scene, canvas: Image) -> None:
+def draw_scene(scene: Scene, canvas: Image, camera_position: Vec3) -> None:
     (c_w, c_h) = canvas.size
+    pixels = canvas.load()
     for x in range(int(-c_w/2), int(c_w/2)):
         for y in range(int(-c_h/2), int(c_h/2)):
             direction = canvas_to_viewport((x, y), canvas, scene)
-            color = trace_ray(scene.camera_position, direction, 1, POS_INF, scene)
-            put_pixel(canvas, (x, y), clamp(color))
+            color = trace_ray(camera_position, direction, 1, POS_INF, scene)
+            put_pixel(canvas, pixels, (x, y), clamp(color))
 
 
 def main() -> None:
     viewport_size = 1
-    projection_plane = 1
+    projection_plane_z = 1
     camera_position = (0, 0, 0)
     spheres = [
         Sphere((0, -1, 3), 1, RED, 500),
@@ -210,14 +212,13 @@ def main() -> None:
     ]
     scene = Scene(
         viewport_size,
-        projection_plane,
-        camera_position,
+        projection_plane_z,
         BACKGROUND_COLOR,
         spheres,
         lights
         )
     canvas = create_image(600, 600)
-    draw_scene(scene, canvas)
+    draw_scene(scene, canvas, camera_position)
     canvas.show()
 
 
