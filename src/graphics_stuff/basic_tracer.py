@@ -14,8 +14,10 @@ GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 YELLOW = (255, 255, 0)
 WHITE = (255, 255, 255)
-BACKGROUND_COLOR = WHITE
+BACKGROUND_COLOR = BLACK
 
+# EPSILON = 0.
+# don't make points cast shadows on themselves
 EPSILON = 0.0001
 
 
@@ -63,12 +65,13 @@ def clamp(a):
 
 
 class Sphere:
-    def __init__(self, center: Vec3, radius: int, color: Color, specular: int):
+    def __init__(self, center: Vec3, radius: float, color: Color, specular: float, reflective: float):
         self.center = center
         self.radius = radius
         self.color = color
         self.r2 = radius*radius
         self.specular = specular
+        self.reflective = reflective
 
 
 class LightType(Enum):
@@ -118,6 +121,10 @@ def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple
     return (t_1, t_2)
 
 
+def reflect_ray(normal: Vec3, ray: Vec3) -> Vec3:
+    return subtract(scalar_multiply(normal, 2 * dot(normal, ray)), ray)
+
+
 def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere], lights: list[Light], specular: int) -> float:
     intensity = 0.0
     length_n = length(normal)
@@ -130,28 +137,28 @@ def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere
 
 
         if light.light_type == LightType.POINT:
-            light_direction = subtract(light.position, point)
+            ray = subtract(light.position, point)
             t_max = 1.0
         else:
-            light_direction = light.direction
+            ray = light.direction
             t_max = POS_INF
 
         # shadow check
-        (shadow_sphere, shadow_t) = closest_intersection(point, light_direction, EPSILON, t_max, spheres)
+        (shadow_sphere, shadow_t) = closest_intersection(point, ray, EPSILON, t_max, spheres)
         if shadow_sphere:
             continue
 
         # diffuse lighting
-        n_dot_l = dot(normal, light_direction)
-        if n_dot_l > 0:
-            intensity += (light.intensity * (n_dot_l / (length_n * length(light_direction))))
+        n_dot_r = dot(normal, ray)
+        if n_dot_r > 0:
+            intensity += (light.intensity * (n_dot_r / (length_n * length(ray))))
 
         # specular lighting
         if specular is not None:
-            reflection = subtract(scalar_multiply(normal, 2 * dot(normal, light_direction)), light_direction)
-            r_dot_v = dot(reflection, view)
+            reflected_ray = reflect_ray(normal, ray)
+            r_dot_v = dot(reflected_ray, view)
             if r_dot_v > 0:
-                intensity += (light.intensity * pow(r_dot_v / (length(reflection) * length_v), specular))
+                intensity += (light.intensity * pow(r_dot_v / (length(reflected_ray) * length_v), specular))
 
     return intensity
 
@@ -173,7 +180,7 @@ def closest_intersection(origin: Vec3, direction: Vec3, t_min: float, t_max: flo
     return (closest_sphere, closest_t)
 
 
-def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: Scene) -> Color:
+def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: Scene, recursion_depth: int = 0) -> Color:
     (closest_sphere, closest_t) = closest_intersection(origin, direction, t_min, t_max, scene.spheres)
 
     if closest_sphere is None:
@@ -185,7 +192,16 @@ def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: 
 
     view: Vec3 = scalar_multiply(direction, -1.0)
     lighting: float = compute_lighting(point, normal, view, scene.spheres, scene.lights, closest_sphere.specular)
-    return scalar_multiply(closest_sphere.color, lighting)
+    local_color = scalar_multiply(closest_sphere.color, lighting)
+
+    r = closest_sphere.reflective
+    if recursion_depth <= 0 or r <=0:
+        return local_color
+
+    reflected_ray = reflect_ray(normal, view)
+    reflected_color = trace_ray(point, reflected_ray, EPSILON, POS_INF, scene, recursion_depth - 1)
+
+    return add(scalar_multiply(local_color, 1.0 - r), scalar_multiply(reflected_color, r))
 
 
 def draw_scene(scene: Scene, img: Image, camera_position: Vec3) -> None:
@@ -194,7 +210,7 @@ def draw_scene(scene: Scene, img: Image, camera_position: Vec3) -> None:
     for x in range(int(-c_w/2), int(c_w/2)):
         for y in range(int(-c_h/2), int(c_h/2)):
             direction = canvas_to_viewport((x, y), img, scene)
-            color = trace_ray(camera_position, direction, 1.0, POS_INF, scene)
+            color = trace_ray(camera_position, direction, 1.0, POS_INF, scene, 2)
             put_pixel(img, pixels, (x, y), clamp(color))
 
 
@@ -203,16 +219,16 @@ def main() -> None:
     projection_plane_z = 1
     camera_position = (0., 0., 0.)
     spheres = [
-        Sphere((0., -1, 3), 1., RED, 500),
-        Sphere((2, 0., 4), 1., BLUE, 500),
-        Sphere((-2, 0., 4), 1., GREEN, 10),
-        Sphere((0, -5001, 0), 5000., YELLOW, 1000)
+        Sphere((0., -1, 3), 1., RED, 500, 0.2),
+        Sphere((2, 0., 4), 1., BLUE, 500, 0.3),
+        Sphere((-2, 0., 4), 1., GREEN, 10, 0.4),
+        Sphere((0, -5001, 0), 5000., YELLOW, 1000, 0.6)
     ]
 
     lights = [
         Light(LightType.AMBIENT, 0.2),
-        Light(LightType.POINT, 0.6, position=[2, 1, 0]),
-        Light(LightType.DIRECTIONAL, 0.2, direction=[1, 4, 4]),
+        Light(LightType.POINT, 0.6, position=(2., 1., 0.)),
+        Light(LightType.DIRECTIONAL, 0.2, direction=(1., 4., 4.)),
     ]
     scene = Scene(
         viewport_size,

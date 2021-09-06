@@ -17,3 +17,6 @@ going through [computer graphics from scratch](https://gabrielgambetta.com/compu
 
 ### with shadows
 ![image](output/shadows.png)
+
+### with reflections
+![image](output/reflections.png)
