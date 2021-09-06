@@ -1,6 +1,7 @@
 from enum import Enum
 import math
 from PIL import Image
+from numpy import multiply
 
 POS_INF = float('inf')
 NEG_INF = float('-inf')
@@ -13,8 +14,9 @@ BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
+YELLOW = (255, 255, 0)
 WHITE = (255, 255, 255)
-BACKGROUND_COLOR = BLACK
+BACKGROUND_COLOR = WHITE
 
 
 def create_image(width: int, height: int, mode='RGB') -> Image:
@@ -70,11 +72,12 @@ def clamp(v):
 
 
 class Sphere:
-    def __init__(self, center: Vec3, radius: int, color: Color):
+    def __init__(self, center: Vec3, radius: int, color: Color, specular: int):
         self.center = center
         self.radius = radius
         self.color = color
         self.r2 = radius*radius
+        self.specular = specular
 
 
 class LightType(Enum):
@@ -123,7 +126,7 @@ def intersect_ray_sphere(origin: Vec3, direction_vector: Vec3, sphere: Sphere) -
     return (t_1, t_2)
 
 
-def compute_lighting(point: Vec3, normal: Vec3, scene: Scene):
+def compute_lighting(point: Vec3, normal: Vec3, scene: Scene, v_dir, specular: int):
     intensity = 0
     length_n = length(normal)
 
@@ -136,9 +139,18 @@ def compute_lighting(point: Vec3, normal: Vec3, scene: Scene):
                 l_vec = subtract(light.position, point)
             else:
                 l_vec = light.position
+
+            # diffuse lighting
             n_dot_l = dot(normal, l_vec)
             if n_dot_l > 0:
                 intensity += light.intensity * n_dot_l / (length_n * length(l_vec))
+
+            # specular lighting
+            if specular is not None:
+                reflection = subtract(scalar_multiply(normal, 2 * dot(normal, l_vec)), l_vec)
+                r_dot_v = dot(reflection, v_dir)
+                if r_dot_v > 0:
+                    intensity += light.intensity * math.pow(r_dot_v / (length(reflection) * length(v_dir)), specular)
 
     return intensity
 
@@ -164,7 +176,7 @@ def trace_ray(direction: Vec3, t_min: float, t_max: float, scene: Scene) -> Colo
     normal = subtract(point, closest_sphere.center);
     normal = scalar_multiply(normal, 1.0 / length(normal));
 
-    return scalar_multiply(closest_sphere.color, compute_lighting(point, normal, scene));
+    return scalar_multiply(closest_sphere.color, compute_lighting(point, normal, scene, scalar_multiply(direction, -1), closest_sphere.specular))
 
 
 def draw_scene(scene: Scene, canvas: Image) -> None:
@@ -181,9 +193,10 @@ def main() -> None:
     projection_plane = 1
     camera_position = (0, 0, 0)
     spheres = [
-        Sphere((0, -1, 3), 1, RED),
-        Sphere((2, 0, 4), 1, BLUE),
-        Sphere((-2, 0, 4), 1, GREEN)
+        Sphere((0, -1, 3), 1, RED, 500),
+        Sphere((2, 0, 4), 1, BLUE, 500),
+        Sphere((-2, 0, 4), 1, GREEN, 10),
+        Sphere((0, -5001, 0), 5000, YELLOW, 1000)
     ]
 
     lights = [
