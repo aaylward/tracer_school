@@ -1,5 +1,6 @@
 from enum import Enum
 import math
+import numpy as np
 from PIL import Image
 
 POS_INF = float('inf')
@@ -39,11 +40,11 @@ def dot(v1, v2):
 
 
 def length(v):
-    return math.sqrt(dot(v, v))
+    return math.sqrt(np.dot(v, v))
 
 
 def scalar_multiply(v, s):
-    return tuple(map(lambda x: s*x, v))
+    return np.multiply(v, s)
 
 
 def add(v1, v2):
@@ -71,9 +72,9 @@ def clamp(v):
 
 class Sphere:
     def __init__(self, center: Vec3, radius: int, color: Color):
-        self.center = center
+        self.center = np.array(center)
         self.radius = radius
-        self.color = color
+        self.color = np.array(color)
         self.r2 = radius*radius
 
 
@@ -87,15 +88,15 @@ class Light:
     def __init__(self, light_type: LightType, intensity: int, position: Vec3 = None):
         self.light_type = light_type
         self.intensity = intensity
-        self.position = position
+        self.position = np.array(position)
 
 
 class Scene:
     def __init__(self, viewport_size: int, projection_plane: int, camera_position: Vec3, background_color: Color, spheres: list[Sphere], lights: list[Light]):
         self.viewport_size = viewport_size
         self.projection_plane = projection_plane
-        self.camera_position = camera_position
-        self.background_color = background_color
+        self.camera_position = np.array(camera_position)
+        self.background_color = np.array(background_color)
         self.spheres = spheres
         self.lights = lights
 
@@ -105,11 +106,12 @@ def canvas_to_viewport(canvas_point: Vec2, img: Image, scene: Scene) -> Vec3:
 
 
 def intersect_ray_sphere(origin: Vec3, direction_vector: Vec3, sphere: Sphere) -> tuple[int, int]:
-    CO = subtract(origin, sphere.center)
+    CO = np.subtract(origin, sphere.center)
+    #CO = subtract(origin, sphere.center)
 
-    a = dot(direction_vector, direction_vector)
-    b = 2*dot(CO, direction_vector)
-    c = dot(CO, CO) - sphere.r2
+    a = np.dot(direction_vector, direction_vector)
+    b = 2*np.dot(CO, direction_vector)
+    c = np.dot(CO, CO) - sphere.r2
 
     discriminant = b*b - 4*a*c
 
@@ -133,10 +135,10 @@ def compute_lighting(point: Vec3, normal: Vec3, scene: Scene):
         else:
             l_vec = None
             if light.light_type == LightType.POINT:
-                l_vec = subtract(light.position, point)
+                l_vec = np.subtract(light.position, point)
             else:
                 l_vec = light.position
-            n_dot_l = dot(normal, l_vec)
+            n_dot_l = np.dot(normal, l_vec)
             if n_dot_l > 0:
                 intensity += light.intensity * n_dot_l / (length_n * length(l_vec))
 
@@ -160,11 +162,11 @@ def trace_ray(direction: Vec3, t_min: float, t_max: float, scene: Scene) -> Colo
     if closest_sphere is None:
         return BACKGROUND_COLOR
 
-    point = add(scene.camera_position, scalar_multiply(direction, closest_t));
-    normal = subtract(point, closest_sphere.center);
-    normal = scalar_multiply(normal, 1.0 / length(normal));
+    point = np.add(scene.camera_position, np.multiply(direction, closest_t));
+    normal = np.subtract(point, closest_sphere.center);
+    normal = np.multiply(normal, 1.0 / length(normal));
 
-    return scalar_multiply(closest_sphere.color, compute_lighting(point, normal, scene));
+    return np.multiply(closest_sphere.color, compute_lighting(point, normal, scene));
 
 
 def draw_scene(scene: Scene, canvas: Image) -> None:
@@ -187,9 +189,9 @@ def main() -> None:
     ]
 
     lights = [
-        Light(LightType.AMBIENT, 0.2),
+        Light(LightType.AMBIENT, 0.3),
         Light(LightType.POINT, 0.6, [2, 1, 0]),
-        Light(LightType.DIRECTIONAL, 0.2, [1, 4, 4]),
+        Light(LightType.DIRECTIONAL, 0.3, [1, 4, 4]),
     ]
     scene = Scene(
         viewport_size,
