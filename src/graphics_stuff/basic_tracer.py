@@ -53,8 +53,12 @@ def subtract(v1, v2):
     return [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
 
 
+def _clamp_value(s):
+    return int(min(255, max(0, s)))
+
+
 def clamp(v):
-    return (int(min(255, max(0, v[0]))), int(min(255, max(0, v[1]))), int(min(255, max(0, v[2]))))
+    return (_clamp_value(v[0]), _clamp_value(v[1]), _clamp_value(v[2]))
 
 
 #########################
@@ -76,10 +80,11 @@ class LightType(Enum):
 
 
 class Light:
-    def __init__(self, light_type: LightType, intensity: int, position: Vec3 = None):
+    def __init__(self, light_type: LightType, intensity: int, position: Vec3 = None, direction: Vec3 = None):
         self.light_type = light_type
         self.intensity = intensity
         self.position = position
+        self.direction = direction
 
 
 class Scene:
@@ -104,6 +109,7 @@ def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple
 
     discriminant = b*b - 4*a*c
 
+    # no real solutions, so there's no intersection
     if discriminant < 0:
         return (POS_INF, POS_INF)
 
@@ -115,7 +121,7 @@ def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple
 
 
 def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere], lights: list[Light], specular: int) -> float:
-    intensity = 0
+    intensity = 0.0
     length_n = length(normal)
     length_v = length(view)
 
@@ -124,27 +130,28 @@ def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere
             intensity += light.intensity
             continue
 
+
         if light.light_type == LightType.POINT:
-            l_vec = subtract(light.position, point)
+            light_direction = subtract(light.position, point)
             t_max = 1.0
         else:
-            l_vec = light.position
+            light_direction = light.direction
             t_max = POS_INF
 
         # shadow check
-        # (shadow_sphere, shadow_t) = closest_intersection(point, l_vec, EPSILON, t_max, spheres)
-        # if shadow_sphere is not None:
-        #     continue
-        #     # pass
+        (shadow_sphere, shadow_t) = (None, None) # closest_intersection(point, light_direction, EPSILON, t_max, spheres)
+        if shadow_sphere:
+            # continue
+            pass
 
         # diffuse lighting
-        n_dot_l = dot(normal, l_vec)
+        n_dot_l = dot(normal, light_direction)
         if n_dot_l > 0:
-            intensity += (light.intensity * n_dot_l / (length_n * length(l_vec)))
+            intensity += (light.intensity * (n_dot_l / (length_n * length(light_direction))))
 
         # specular lighting
         if specular is not None:
-            reflection = subtract(scalar_multiply(normal, 2 * dot(normal, l_vec)), l_vec)
+            reflection = subtract(scalar_multiply(normal, 2 * dot(normal, light_direction)), light_direction)
             r_dot_v = dot(reflection, view)
             if r_dot_v > 0:
                 intensity += (light.intensity * pow(r_dot_v / (length(reflection) * length_v), specular))
@@ -207,8 +214,8 @@ def main() -> None:
 
     lights = [
         Light(LightType.AMBIENT, 0.2),
-        Light(LightType.POINT, 0.6, [2, 1, 0]),
-        Light(LightType.DIRECTIONAL, 0.2, [1, 4, 4]),
+        Light(LightType.POINT, 0.6, position=[2, 1, 0]),
+        Light(LightType.DIRECTIONAL, 0.2, direction=[1, 4, 4]),
     ]
     scene = Scene(
         viewport_size,
