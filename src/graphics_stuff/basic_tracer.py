@@ -21,14 +21,6 @@ def create_image(width: int, height: int, mode='RGB') -> Image:
     return Image.new(mode, (width, height))
 
 
-def put_pixel(img: Image, point: Vec2, color: Color) -> None:
-    (c_w, c_h) = img.size
-    (x, y) = point
-    translated_point = (int(c_w / 2 + x), int(c_h / 2 - y) - 1)
-    if 0 <= translated_point[0] < img.width and 0 <= translated_point[1] < img.height:
-        img.putpixel(translated_point, color)
-
-
 ###### algebra ######
 def dot(v1, v2):
     assert len(v1) == len(v2)
@@ -100,8 +92,16 @@ class Scene:
         self.lights = lights
 
 
+
 def canvas_to_viewport(canvas_point: Vec2, img: Image, scene: Scene) -> Vec3:
     return (canvas_point[0] * scene.viewport_size / img.width, canvas_point[1] * scene.viewport_size / img.height, scene.projection_plane)
+
+
+def viewport_to_canvas(point: Vec2, img: Image) -> Vec2:
+    (x, y) = point
+    translated_point = (int(img.width / 2 + x), int(img.height / 2 - y) - 1)
+    if 0 <= translated_point[0] < img.width and 0 <= translated_point[1] < img.height:
+        return translated_point
 
 
 def intersect_ray_sphere(origin: Vec3, direction_vector: Vec3, sphere: Sphere) -> tuple[int, int]:
@@ -172,8 +172,10 @@ def draw_scene(scene: Scene, canvas: Image) -> None:
     for x in range(int(-c_w/2), int(c_w/2)):
         for y in range(int(-c_h/2), int(c_h/2)):
             direction = canvas_to_viewport((x, y), canvas, scene)
-            color = trace_ray(direction, 1, POS_INF, scene)
-            put_pixel(canvas, (x, y), clamp(color))
+            canvas_point = viewport_to_canvas((x, y), canvas)
+            if canvas_point is not None:
+                color = trace_ray(direction, 1, POS_INF, scene)
+                canvas.putpixel(canvas_point, clamp(color))
 
 
 def main() -> None:
