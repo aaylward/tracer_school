@@ -5,8 +5,8 @@ from PIL import Image
 POS_INF = float('inf')
 
 Color = tuple[int, int, int]
-Vec2 = tuple[int, int]
-Vec3 = tuple[int, int, int]
+Vec2 = tuple[float, float]
+Vec3 = tuple[float, float, float]
 
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
@@ -24,41 +24,39 @@ def create_image(width: int, height: int, mode='RGB') -> Image:
 
 
 def put_pixel(img: Image, pixels, point: Vec2, color: Color) -> None:
-    (c_w, c_h) = img.size
-    (x, y) = point
-    p_x = int(c_w / 2 + x)
-    p_y = int(c_h / 2 - y) - 1
+    p_x = int(img.width / 2. + point[0])
+    p_y = int(img.height / 2. - point[1]) - 1
     if 0 <= p_x < img.width and 0 <= p_y < img.height:
         pixels[p_x, p_y] = color
 
 
 ###### algebra ######
-def dot(v1, v2):
-    return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2]
+def dot(a, b):
+    return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]
 
 
-def length(v):
-    return sqrt(dot(v, v))
+def length(a):
+    return sqrt(dot(a, a))
 
 
-def scalar_multiply(v, s):
-    return [v[0]*s, v[1]*s, v[2]*s]
+def scalar_multiply(a, s):
+    return (a[0]*s, a[1]*s, a[2]*s)
 
 
-def add(v1, v2):
-    return [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]]
+def add(a, b):
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
 
 
-def subtract(v1, v2):
-    return [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]]
+def subtract(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
 
 def _clamp_value(s):
     return int(min(255, max(0, s)))
 
 
-def clamp(v):
-    return (_clamp_value(v[0]), _clamp_value(v[1]), _clamp_value(v[2]))
+def clamp(a):
+    return (_clamp_value(a[0]), _clamp_value(a[1]), _clamp_value(a[2]))
 
 
 #########################
@@ -80,7 +78,7 @@ class LightType(Enum):
 
 
 class Light:
-    def __init__(self, light_type: LightType, intensity: int, position: Vec3 = None, direction: Vec3 = None):
+    def __init__(self, light_type: LightType, intensity: float, position: Vec3 = None, direction: Vec3 = None):
         self.light_type = light_type
         self.intensity = intensity
         self.position = position
@@ -101,13 +99,13 @@ def canvas_to_viewport(canvas_point: Vec2, img: Image, scene: Scene) -> Vec3:
 
 
 def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple[int, int]:
-    CO = subtract(origin, sphere.center)
+    origin_to_sphere = subtract(origin, sphere.center)
 
     a = dot(direction, direction)
-    b = 2*dot(CO, direction)
-    c = dot(CO, CO) - sphere.r2
+    b = 2*dot(origin_to_sphere, direction)
+    c = dot(origin_to_sphere, origin_to_sphere) - sphere.r2
 
-    discriminant = b*b - 4*a*c
+    discriminant = b*b - (4. * a * c)
 
     # no real solutions, so there's no intersection
     if discriminant < 0:
@@ -115,8 +113,8 @@ def intersect_ray_sphere(origin: Vec3, direction: Vec3, sphere: Sphere) -> tuple
 
     sqrt_disc = sqrt(discriminant)
 
-    t_1 = (-b + sqrt_disc) / 2*a
-    t_2 = (-b - sqrt_disc) / 2*a
+    t_1 = (-b + sqrt_disc) / (2. * a)
+    t_2 = (-b - sqrt_disc) / (2. * a)
     return (t_1, t_2)
 
 
@@ -139,10 +137,9 @@ def compute_lighting(point: Vec3, normal: Vec3, view: Vec3, spheres: list[Sphere
             t_max = POS_INF
 
         # shadow check
-        (shadow_sphere, shadow_t) = (None, None) # closest_intersection(point, light_direction, EPSILON, t_max, spheres)
+        (shadow_sphere, shadow_t) = closest_intersection(point, light_direction, EPSILON, t_max, spheres)
         if shadow_sphere:
-            # continue
-            pass
+            continue
 
         # diffuse lighting
         n_dot_l = dot(normal, light_direction)
@@ -186,30 +183,30 @@ def trace_ray(origin: Vec3, direction: Vec3, t_min: float, t_max: float, scene: 
     normal: Vec3 = subtract(point, closest_sphere.center);
     normal = scalar_multiply(normal, 1.0 / length(normal));
 
-    view: Vec3 = scalar_multiply(direction, -1)
+    view: Vec3 = scalar_multiply(direction, -1.0)
     lighting: float = compute_lighting(point, normal, view, scene.spheres, scene.lights, closest_sphere.specular)
     return scalar_multiply(closest_sphere.color, lighting)
 
 
-def draw_scene(scene: Scene, canvas: Image, camera_position: Vec3) -> None:
-    (c_w, c_h) = canvas.size
-    pixels = canvas.load()
+def draw_scene(scene: Scene, img: Image, camera_position: Vec3) -> None:
+    (c_w, c_h) = img.size
+    pixels = img.load()
     for x in range(int(-c_w/2), int(c_w/2)):
         for y in range(int(-c_h/2), int(c_h/2)):
-            direction = canvas_to_viewport((x, y), canvas, scene)
-            color = trace_ray(camera_position, direction, 1, POS_INF, scene)
-            put_pixel(canvas, pixels, (x, y), clamp(color))
+            direction = canvas_to_viewport((x, y), img, scene)
+            color = trace_ray(camera_position, direction, 1.0, POS_INF, scene)
+            put_pixel(img, pixels, (x, y), clamp(color))
 
 
 def main() -> None:
     viewport_size = 1
     projection_plane_z = 1
-    camera_position = (0, 0, 0)
+    camera_position = (0., 0., 0.)
     spheres = [
-        Sphere((0, -1, 3), 1, RED, 500),
-        Sphere((2, 0, 4), 1, BLUE, 500),
-        Sphere((-2, 0, 4), 1, GREEN, 10),
-        Sphere((0, -5001, 0), 5000, YELLOW, 1000)
+        Sphere((0., -1, 3), 1., RED, 500),
+        Sphere((2, 0., 4), 1., BLUE, 500),
+        Sphere((-2, 0., 4), 1., GREEN, 10),
+        Sphere((0, -5001, 0), 5000., YELLOW, 1000)
     ]
 
     lights = [
@@ -224,9 +221,9 @@ def main() -> None:
         spheres,
         lights
         )
-    canvas = create_image(600, 600)
-    draw_scene(scene, canvas, camera_position)
-    canvas.show()
+    img = create_image(600, 600)
+    draw_scene(scene, img, camera_position)
+    img.show()
 
 
 if __name__=='__main__': main()
